@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-"""
-Audio Duplicate Detection System
-=================================
-Identifies duplicate audio files using acoustic fingerprinting technology.
-Compares actual sound content regardless of file format, bitrate, or filename.
 
-Author: Audio Duplicate Detector
-Version: 1.1.0
-"""
 
 import subprocess
 import json
