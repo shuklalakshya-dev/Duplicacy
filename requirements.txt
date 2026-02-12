@@ -1,0 +1,16 @@
+# Audio Duplicate Detection System
+# ================================
+# This project primarily uses Python standard library modules.
+# No external Python packages are required for basic operation.
+#
+# External Dependency (REQUIRED):
+# - Chromaprint fpcalc command-line tool
+#   Download from: https://acoustid.org/chromaprint
+#
+# Optional packages for enhanced functionality:
+# (Uncomment to install)
+
+# pyacoustid>=1.2.2        # Alternative Chromaprint integration
+# mutagen>=1.46.0          # Audio metadata extraction
+# tqdm>=4.65.0             # Enhanced progress bars
+# colorama>=0.4.6          # Colored console output (Windows)

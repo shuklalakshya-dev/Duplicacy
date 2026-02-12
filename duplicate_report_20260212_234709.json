@@ -1,0 +1,87 @@
+{
+  "generated_at": "2026-02-12T23:47:09.061541",
+  "total_files_scanned": 8,
+  "duplicate_groups_found": 2,
+  "total_duplicate_files": 5,
+  "potential_savings_bytes": 741672,
+  "potential_savings_human": "724.29 KB",
+  "duplicate_groups": [
+    {
+      "files": [
+        {
+          "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\RAW_assam_Peter25017_20013_8720972299_1700539716906_20231209_140913_IN12092023140833858_8720972299 - Copy (2).mp3",
+          "size": 224712,
+          "format": ".mp3",
+          "fingerprint_length": 948,
+          "duration": 210.17,
+          "file_hash": null,
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\RAW_assam_Peter25017_20013_8720972299_1700539716906_20231209_140913_IN12092023140833858_8720972299 - Copy.mp3",
+          "size": 224712,
+          "format": ".mp3",
+          "fingerprint_length": 948,
+          "duration": 210.17,
+          "file_hash": null,
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\RAW_assam_Peter25017_20013_8720972299_1700539716906_20231209_140913_IN12092023140833858_8720972299.mp3",
+          "size": 224712,
+          "format": ".mp3",
+          "fingerprint_length": 948,
+          "duration": 210.17,
+          "file_hash": null,
+          "error": null
+        }
+      ],
+      "recommended_keep": {
+        "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\RAW_assam_Peter25017_20013_8720972299_1700539716906_20231209_140913_IN12092023140833858_8720972299 - Copy (2).mp3",
+        "size": 224712,
+        "format": ".mp3",
+        "fingerprint_length": 948,
+        "duration": 210.17,
+        "file_hash": null,
+        "error": null
+      },
+      "potential_savings": 449424,
+      "similarity": 1.0,
+      "file_count": 3
+    },
+    {
+      "files": [
+        {
+          "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\RAW_assam_25015_20011_916900906508_1700539716906_20231209_103513_IN12092023103420796_916900906508 - Copy.mp3",
+          "size": 292248,
+          "format": ".mp3",
+          "fingerprint_length": 948,
+          "duration": 281.3,
+          "file_hash": null,
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\RAW_assam_25015_20011_916900906508_1700539716906_20231209_103513_IN12092023103420796_916900906508.mp3",
+          "size": 292248,
+          "format": ".mp3",
+          "fingerprint_length": 948,
+          "duration": 281.3,
+          "file_hash": null,
+          "error": null
+        }
+      ],
+      "recommended_keep": {
+        "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\RAW_assam_25015_20011_916900906508_1700539716906_20231209_103513_IN12092023103420796_916900906508 - Copy.mp3",
+        "size": 292248,
+        "format": ".mp3",
+        "fingerprint_length": 948,
+        "duration": 281.3,
+        "file_hash": null,
+        "error": null
+      },
+      "potential_savings": 292248,
+      "similarity": 1.0,
+      "file_count": 2
+    }
+  ]
+}

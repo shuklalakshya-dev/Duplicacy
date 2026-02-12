@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-02-12T23:49:19.398376",
+  "total_files_scanned": 7,
+  "duplicate_groups_found": 1,
+  "total_duplicate_files": 3,
+  "potential_savings_bytes": 449424,
+  "potential_savings_human": "438.89 KB",
+  "duplicate_groups": [
+    {
+      "files": [
+        {
+          "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\5.mp3",
+          "size": 224712,
+          "format": ".mp3",
+          "fingerprint_length": 0,
+          "duration": null,
+          "file_hash": "ed172b7fc4a4399ad237ef8e93a27cd42d7debba4c26a487e8331443a47a4818",
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\6.mp3",
+          "size": 224712,
+          "format": ".mp3",
+          "fingerprint_length": 0,
+          "duration": null,
+          "file_hash": "ed172b7fc4a4399ad237ef8e93a27cd42d7debba4c26a487e8331443a47a4818",
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\7.mp3",
+          "size": 224712,
+          "format": ".mp3",
+          "fingerprint_length": 0,
+          "duration": null,
+          "file_hash": "ed172b7fc4a4399ad237ef8e93a27cd42d7debba4c26a487e8331443a47a4818",
+          "error": null
+        }
+      ],
+      "recommended_keep": {
+        "path": "C:\\Users\\MSI-PC\\Downloads\\OUTPUT- Organized\\OUTPUT\\active_voice_and_duplicacy_filtered\\Assamese\\5.mp3",
+        "size": 224712,
+        "format": ".mp3",
+        "fingerprint_length": 0,
+        "duration": null,
+        "file_hash": "ed172b7fc4a4399ad237ef8e93a27cd42d7debba4c26a487e8331443a47a4818",
+        "error": null
+      },
+      "potential_savings": 449424,
+      "similarity": 1.0,
+      "file_count": 3
+    }
+  ]
+}
