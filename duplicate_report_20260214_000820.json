@@ -1,0 +1,78 @@
+{
+  "generated_at": "2026-02-14T00:08:20.823280",
+  "total_files_scanned": 6,
+  "duplicate_groups_found": 1,
+  "total_duplicate_files": 5,
+  "potential_savings_bytes": 13346358,
+  "potential_savings_human": "12.73 MB",
+  "duplicate_groups": [
+    {
+      "files": [
+        {
+          "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\BIT.wav",
+          "size": 19798316,
+          "format": ".wav",
+          "fingerprint_length": 948,
+          "audio_vector_length": 95600,
+          "duration": 618.7,
+          "file_hash": null,
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\EXT.wav",
+          "size": 9899214,
+          "format": ".wav",
+          "fingerprint_length": 948,
+          "audio_vector_length": 95600,
+          "duration": 618.7,
+          "file_hash": null,
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\NEW.mp3",
+          "size": 1149048,
+          "format": ".mp3",
+          "fingerprint_length": 948,
+          "audio_vector_length": 95600,
+          "duration": 618.7,
+          "file_hash": null,
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\Sample -1 - Copy.mp3",
+          "size": 1149048,
+          "format": ".mp3",
+          "fingerprint_length": 948,
+          "audio_vector_length": 95600,
+          "duration": 618.7,
+          "file_hash": null,
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\Sample -1.mp3",
+          "size": 1149048,
+          "format": ".mp3",
+          "fingerprint_length": 948,
+          "audio_vector_length": 95600,
+          "duration": 618.7,
+          "file_hash": null,
+          "error": null
+        }
+      ],
+      "recommended_keep": {
+        "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\BIT.wav",
+        "size": 19798316,
+        "format": ".wav",
+        "fingerprint_length": 948,
+        "audio_vector_length": 95600,
+        "duration": 618.7,
+        "file_hash": null,
+        "error": null
+      },
+      "potential_savings": 13346358,
+      "similarity": 0.9999372384937238,
+      "file_count": 5,
+      "detection_method": "audio_content"
+    }
+  ]
+}

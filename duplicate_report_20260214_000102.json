@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-02-14T00:01:02.060948",
+  "total_files_scanned": 4,
+  "duplicate_groups_found": 1,
+  "total_duplicate_files": 2,
+  "potential_savings_bytes": 529278,
+  "potential_savings_human": "516.87 KB",
+  "duplicate_groups": [
+    {
+      "files": [
+        {
+          "path": "test_cross_format\\backup_audio.flac",
+          "size": 45297,
+          "format": ".flac",
+          "fingerprint_length": 0,
+          "duration": null,
+          "file_hash": "022f5f9f37e184499fd238acf78dcd3906456ca337fd74816fac0f0568a19abd",
+          "error": null
+        },
+        {
+          "path": "test_cross_format\\original_song.wav",
+          "size": 529278,
+          "format": ".wav",
+          "fingerprint_length": 0,
+          "duration": null,
+          "file_hash": "022f5f9f37e184499fd238acf78dcd3906456ca337fd74816fac0f0568a19abd",
+          "error": null
+        }
+      ],
+      "recommended_keep": {
+        "path": "test_cross_format\\backup_audio.flac",
+        "size": 45297,
+        "format": ".flac",
+        "fingerprint_length": 0,
+        "duration": null,
+        "file_hash": "022f5f9f37e184499fd238acf78dcd3906456ca337fd74816fac0f0568a19abd",
+        "error": null
+      },
+      "potential_savings": 529278,
+      "similarity": 1.0,
+      "file_count": 2,
+      "detection_method": "audio_content"
+    }
+  ]
+}

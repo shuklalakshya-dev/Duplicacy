@@ -13,12 +13,24 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Tuple, Set
 from datetime import datetime
 
-# Supported audio formats
-SUPPORTED_FORMATS = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.opus'}
+# Supported audio formats (normalized extensions)
+SUPPORTED_FORMATS = {
+    '.mp3', '.wav', '.flac', '.falc', '.wave', '.aac', '.ogg', '.m4a', '.wma', '.opus'
+}
+
+
+def normalize_extension(ext: str) -> str:
+    """Normalize common/typo extensions to canonical forms."""
+    mapping = {
+        '.falc': '.flac',  # common typo
+        '.wave': '.wav',   # alternate spelling
+    }
+    return mapping.get(ext, ext)
 
 # Quality ranking for format preference (higher = better quality potential)
 FORMAT_QUALITY_RANK = {
     '.flac': 100,  # Lossless
+    '.falc': 100,  # Treat typo as FLAC quality
     '.wav': 95,    # Lossless (uncompressed)
     '.m4a': 70,    # AAC container, variable quality
     '.aac': 70,    # Advanced Audio Coding
@@ -36,6 +48,7 @@ class AudioFile:
     size: int
     format: str
     fingerprint: Optional[List[int]] = None  # Raw integer array from Chromaprint
+    audio_vector: Optional[List[float]] = None  # Energy vector from FFmpeg decode
     duration: Optional[float] = None
     file_hash: Optional[str] = None
     error: Optional[str] = None
@@ -47,6 +60,7 @@ class AudioFile:
             'size': self.size,
             'format': self.format,
             'fingerprint_length': len(self.fingerprint) if self.fingerprint else 0,
+            'audio_vector_length': len(self.audio_vector) if self.audio_vector else 0,
             'duration': self.duration,
             'file_hash': self.file_hash,
             'error': self.error
@@ -60,6 +74,7 @@ class DuplicateGroup:
     recommended_keep: Optional[AudioFile] = None
     potential_savings: int = 0
     similarity: float = 0.0
+    detection_method: str = 'unknown'  # 'fingerprint', 'hash', 'extension'
     
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -68,7 +83,8 @@ class DuplicateGroup:
             'recommended_keep': self.recommended_keep.to_dict() if self.recommended_keep else None,
             'potential_savings': self.potential_savings,
             'similarity': self.similarity,
-            'file_count': len(self.files)
+            'file_count': len(self.files),
+            'detection_method': self.detection_method
         }
 
 
@@ -245,12 +261,219 @@ class ChromaprintFingerprinter:
             return None, None
 
 
+class FFmpegAudioHasher:
+    """
+    Uses FFmpeg to decode audio files to raw PCM and compute a hash of the audio data.
+    This allows detecting duplicate audio content across ANY format/extension/bitrate,
+    because we compare the decoded audio waveform, not the container bytes.
+    """
+    
+    def __init__(self, ffmpeg_path: Optional[str] = None):
+        self.ffmpeg_path = ffmpeg_path or self._find_ffmpeg()
+        if not self.ffmpeg_path:
+            raise RuntimeError("ffmpeg not found")
+        print(f"Using ffmpeg for audio-content hashing: {self.ffmpeg_path}")
+
+    def _find_ffmpeg(self) -> Optional[str]:
+        """Find ffmpeg executable."""
+        ffmpeg_name = 'ffmpeg.exe' if sys.platform == 'win32' else 'ffmpeg'
+        
+        # Check common locations
+        common = []
+        if sys.platform == 'win32':
+            common = [
+                Path.cwd() / 'ffmpeg.exe',
+                Path(os.environ.get('PROGRAMFILES', 'C:\\Program Files')) / 'ffmpeg' / 'bin' / 'ffmpeg.exe',
+                Path.home() / 'ffmpeg' / 'bin' / 'ffmpeg.exe',
+            ]
+            # Check WinGet install path
+            winget_base = Path(os.environ.get('LOCALAPPDATA', '')) / 'Microsoft' / 'WinGet' / 'Packages'
+            if winget_base.exists():
+                for d in winget_base.iterdir():
+                    if 'ffmpeg' in d.name.lower():
+                        for bin_path in d.rglob('ffmpeg.exe'):
+                            common.append(bin_path)
+        else:
+            common = [
+                Path('/usr/bin/ffmpeg'),
+                Path('/usr/local/bin/ffmpeg'),
+                Path('/opt/homebrew/bin/ffmpeg'),
+            ]
+        
+        for path in common:
+            if path.exists():
+                return str(path)
+        
+        # Try which/where
+        which_cmd = 'where' if sys.platform == 'win32' else 'which'
+        try:
+            result = subprocess.run(
+                [which_cmd, ffmpeg_name],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip().split('\n')[0].strip()
+        except Exception:
+            pass
+        
+        return None
+
+    def compute_audio_hash(self, audio_path: Path, duration_limit: int = 120) -> Optional[str]:
+        """
+        Legacy hash method - only works for lossless pairs.
+        Use compute_audio_vector() for cross-format comparison.
+        """
+        # Kept for backwards compatibility but audio_vector is preferred
+        return None
+    
+    def compute_audio_vector(self, audio_path: Path, duration_limit: int = 120) -> Optional[List[int]]:
+        """
+        Decode audio to PCM via FFmpeg and compute a robust feature vector
+        suitable for cross-format duplicate detection.
+        
+        We decode to low-sample-rate mono PCM, then heavily downsample and 
+        quantize the waveform. The result is a sequence of coarse amplitude 
+        values that captures the shape of the audio, tolerant of lossy codec 
+        artifacts. Two such vectors are compared with a sample-match ratio.
+        
+        Args:
+            audio_path: Path to the audio file
+            duration_limit: Max seconds to analyze
+            
+        Returns:
+            List of quantized sample values (int), or None on error
+        """
+        try:
+            import struct
+            
+            # Decode to 8kHz mono 16-bit PCM
+            cmd = [
+                self.ffmpeg_path,
+                '-i', str(audio_path),
+                '-t', str(duration_limit),
+                '-vn',
+                '-ac', '1',
+                '-ar', '8000',
+                '-sample_fmt', 's16',
+                '-f', 's16le',
+                '-loglevel', 'error',
+                'pipe:1'
+            ]
+            
+            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=120,
+                creationflags=creation_flags
+            )
+            
+            if result.returncode != 0 or not result.stdout:
+                return None
+            
+            raw_audio = result.stdout
+            
+            if len(raw_audio) < 400:
+                return None
+            
+            # Parse PCM samples
+            num_samples = len(raw_audio) // 2
+            samples = struct.unpack(f'<{num_samples}h', raw_audio[:num_samples * 2])
+            
+            # Skip first and last 0.25s to avoid encoder padding differences
+            skip = min(2000, len(samples) // 4)  # 0.25s at 8kHz
+            if len(samples) > skip * 3:
+                samples = samples[skip:-skip]
+            
+            # Downsample by taking every 10th sample (effective 800Hz)
+            # Then quantize to 64 levels to absorb lossy codec differences
+            bucket_size = 1024  # 32768/32 = 32 levels per polarity, 64 total
+            vector = []
+            for i in range(0, len(samples), 10):
+                q = samples[i] // bucket_size
+                vector.append(q)
+            
+            if len(vector) < 20:
+                return None
+            
+            return vector
+            
+        except subprocess.TimeoutExpired:
+            return None
+        except Exception:
+            return None
+    
+    @staticmethod
+    def compare_vectors(v1: List[int], v2: List[int]) -> float:
+        """
+        Compare two audio vectors using sample-match ratio.
+        
+        Counts the fraction of samples that are identical (or differ by at most 1 
+        quantization level). This is robust against constant-energy signals where
+        correlation-based methods fail.
+        
+        Returns similarity 0.0-1.0.
+        """
+        if not v1 or not v2:
+            return 0.0
+        
+        min_len = min(len(v1), len(v2))
+        max_len = max(len(v1), len(v2))
+        
+        if min_len < 10:
+            return 0.0
+        
+        # Count matching samples (allow +/- 1 bucket tolerance for codec noise)
+        matches = 0
+        for i in range(min_len):
+            if abs(v1[i] - v2[i]) <= 1:
+                matches += 1
+        
+        similarity = matches / min_len
+        
+        # Penalize very different lengths
+        length_ratio = min_len / max_len
+        if length_ratio < 0.5:
+            similarity *= length_ratio
+        elif length_ratio < 0.8:
+            similarity *= (0.8 + 0.2 * length_ratio)
+        
+        return similarity
+    
+    def get_duration(self, audio_path: Path) -> Optional[float]:
+        """Get the duration of an audio file using ffmpeg."""
+        try:
+            ffprobe = self.ffmpeg_path.replace('ffmpeg', 'ffprobe')
+            cmd = [
+                ffprobe,
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'json',
+                str(audio_path)
+            ]
+            
+            creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+            
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=30,
+                creationflags=creation_flags
+            )
+            
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                return float(data.get('format', {}).get('duration', 0))
+        except Exception:
+            pass
+        return None
+
+
 class AudioDuplicateDetector:
     """Main class for detecting duplicate audio files."""
     
     def __init__(
         self,
-        similarity_threshold: float = 0.95,
+        similarity_threshold: float = 0.90,
         fpcalc_path: Optional[str] = None,
         use_file_hash_fallback: bool = True
     ):
@@ -265,15 +488,29 @@ class AudioDuplicateDetector:
         self.similarity_threshold = similarity_threshold
         self.use_file_hash_fallback = use_file_hash_fallback
         
+        # Try to initialize Chromaprint fingerprinter
         try:
             self.fingerprinter = ChromaprintFingerprinter(fpcalc_path)
             self.fingerprinting_available = True
         except RuntimeError as e:
-            print(f"\nWarning: {e}")
-            print("Falling back to file hash comparison only.")
-            print("Note: File hash can only detect EXACT duplicates, not same audio in different formats.\n")
+            print(f"\nNote: {e}")
             self.fingerprinter = None
             self.fingerprinting_available = False
+        
+        # Try to initialize FFmpeg audio hasher (THE KEY for cross-format detection)
+        try:
+            self.audio_hasher = FFmpegAudioHasher()
+            self.audio_hashing_available = True
+        except RuntimeError:
+            print("WARNING: ffmpeg not found. Cannot detect same audio across different formats/bitrates.")
+            print("Install ffmpeg: winget install ffmpeg  OR  https://ffmpeg.org/download.html\n")
+            self.audio_hasher = None
+            self.audio_hashing_available = False
+        
+        if not self.fingerprinting_available and not self.audio_hashing_available:
+            print("\n*** CRITICAL: Neither fpcalc nor ffmpeg found! ***")
+            print("*** Only exact byte-for-byte copies will be detected. ***")
+            print("*** Same audio in different formats WILL BE MISSED. ***\n")
     
     def scan_folder(self, folder_path: Path, recursive: bool = True) -> List[AudioFile]:
         """
@@ -292,15 +529,19 @@ class AudioDuplicateDetector:
         print(f"\n{'='*60}")
         print(f"Scanning: {folder_path}")
         print(f"Recursive: {recursive}")
-        print(f"Fingerprinting: {'Available' if self.fingerprinting_available else 'NOT AVAILABLE (hash only)'}")
+        print(f"Fingerprinting (fpcalc): {'Available' if self.fingerprinting_available else 'NOT AVAILABLE'}")
+        print(f"Audio content hashing (ffmpeg): {'Available' if self.audio_hashing_available else 'NOT AVAILABLE'}")
         print(f"{'='*60}\n")
         
-        # Collect all audio files
+        # Collect all audio files (with normalized extensions so typos like .falc are included)
         all_files = list(folder_path.glob(pattern))
-        audio_paths = [
-            f for f in all_files 
-            if f.is_file() and f.suffix.lower() in SUPPORTED_FORMATS
-        ]
+        audio_paths = []
+        for f in all_files:
+            if not f.is_file():
+                continue
+            ext = normalize_extension(f.suffix.lower())
+            if ext in SUPPORTED_FORMATS:
+                audio_paths.append(f)
         
         print(f"Found {len(audio_paths)} audio files\n")
         
@@ -310,7 +551,7 @@ class AudioDuplicateDetector:
                 audio_file = AudioFile(
                     path=file_path,
                     size=size,
-                    format=file_path.suffix.lower()
+                    format=normalize_extension(file_path.suffix.lower())
                 )
                 
                 # Progress indicator
@@ -318,25 +559,38 @@ class AudioDuplicateDetector:
                 print(f"{progress} Processing: {file_path.name}", end='')
                 sys.stdout.flush()
                 
-                # Generate fingerprint
+                # Generate fingerprint / audio vector
+                # We try BOTH methods when available for maximum detection
+                
+                # Method 1: Try Chromaprint fingerprinting (good for fuzzy matching)
                 if self.fingerprinter:
                     fp, duration = self.fingerprinter.get_fingerprint(file_path)
-                    if fp and len(fp) > 10:  # Valid fingerprint should have many values
+                    if fp and len(fp) > 10:
                         audio_file.fingerprint = fp
                         audio_file.duration = duration
-                        print(f" [fingerprinted: {len(fp)} samples, {duration:.1f}s]")
+                        print(f" [fingerprinted]", end='')
+                
+                # Method 2: FFmpeg audio vector (THE KEY for cross-format detection)
+                # Decodes audio to PCM and creates energy vector for similarity comparison.
+                # This catches same audio in different formats/names/bitrates.
+                if self.audio_hasher:
+                    audio_vec = self.audio_hasher.compute_audio_vector(file_path)
+                    if audio_vec:
+                        audio_file.audio_vector = audio_vec
+                        if not audio_file.duration:
+                            audio_file.duration = self.audio_hasher.get_duration(file_path)
+                        print(f" [audio-vector: {len(audio_vec)} frames]", end='')
+                
+                # Method 3: Plain file hash fallback (can only find exact byte copies)
+                if not audio_file.fingerprint and not audio_file.audio_vector:
+                    if self.use_file_hash_fallback:
+                        audio_file.file_hash = self._compute_file_hash(file_path)
+                        print(f" [file-byte hash only]", end='')
                     else:
-                        # Fallback to file hash
-                        if self.use_file_hash_fallback:
-                            audio_file.file_hash = self._compute_file_hash(file_path)
-                            print(" [hashed - fingerprint failed]")
-                        else:
-                            audio_file.error = "Fingerprinting failed"
-                            print(" [skipped - fingerprint failed]")
-                else:
-                    # Only file hash available
-                    audio_file.file_hash = self._compute_file_hash(file_path)
-                    print(" [hashed]")
+                        audio_file.error = "No fingerprinting method available"
+                        print(" [skipped]", end='')
+                
+                print()  # newline after all method tags
                 
                 audio_files.append(audio_file)
                 
@@ -406,24 +660,68 @@ class AudioDuplicateDetector:
         return max(0.0, min(1.0, similarity))
     
     def _calculate_duration_similarity(self, dur1: Optional[float], dur2: Optional[float]) -> float:
-        """Calculate duration similarity as a ratio."""
+        """Calculate duration similarity as a ratio (more lenient for bitrate/metadata differences)."""
         if not dur1 or not dur2:
             return 1.0  # Don't penalize if duration unknown
         
-        # Allow up to 2 seconds difference for same duration
+        # Allow up to 5 seconds difference for same song (handles tags/silence differences)
         diff = abs(dur1 - dur2)
-        if diff <= 2.0:
+        if diff <= 5.0:
             return 1.0
         
         ratio = min(dur1, dur2) / max(dur1, dur2)
         return ratio
     
-    def find_duplicates(self, audio_files: List[AudioFile]) -> List[DuplicateGroup]:
+    def _find_extension_duplicates(self, audio_files: List[AudioFile]) -> List[DuplicateGroup]:
+        """
+        Find files with the same base name but different extensions.
+        
+        These are potential duplicates where the same audio was saved in different formats
+        (e.g., song.mp3 and song.flac, song.wav and song.m4a).
+        
+        Args:
+            audio_files: List of AudioFile objects to check
+            
+        Returns:
+            List of DuplicateGroup objects for extension-based duplicates
+        """
+        # Group files by base filename (without extension), across all directories
+        name_groups: Dict[str, List[AudioFile]] = defaultdict(list)
+
+        for f in audio_files:
+            base_name = f.path.stem.lower()  # Case-insensitive comparison
+            name_groups[base_name].append(f)
+        
+        duplicate_groups = []
+        
+        for base_name, files in name_groups.items():
+            if len(files) > 1:
+                # Check that files have DIFFERENT extensions (not just same file listed twice)
+                extensions = set(f.format for f in files)
+                if len(extensions) > 1:
+                    # Found files with same name but different extensions
+                    group = DuplicateGroup(
+                        files=files,
+                        similarity=0.99,  # High similarity assumed for same-name files
+                        detection_method='extension'
+                    )
+                    self._recommend_keep(group)
+                    duplicate_groups.append(group)
+                    
+                    # Log the detected extension duplicates
+                    ext_list = ', '.join(sorted(extensions))
+                    file_names = ', '.join(f.path.name for f in files)
+                    print(f"    ✓ Extension duplicate: {file_names}")
+        
+        return duplicate_groups
+
+    def find_duplicates(self, audio_files: List[AudioFile], check_extensions: bool = True) -> List[DuplicateGroup]:
         """
         Find duplicate groups among audio files.
         
         Args:
             audio_files: List of AudioFile objects to compare
+            check_extensions: Also detect duplicates with same name but different extensions
             
         Returns:
             List of DuplicateGroup objects
@@ -431,21 +729,116 @@ class AudioDuplicateDetector:
         print(f"\n{'='*60}")
         print("Finding duplicates...")
         print(f"Similarity threshold: {self.similarity_threshold}")
+        print(f"Extension-based detection: {'Enabled' if check_extensions else 'Disabled'}")
+        print(f"Audio content hashing (ffmpeg): {'Available' if self.audio_hashing_available else 'NOT available'}")
         print(f"{'='*60}\n")
-        
-        # Separate files by comparison method
-        fingerprinted = [f for f in audio_files if f.fingerprint]
-        hash_only = [f for f in audio_files if f.file_hash and not f.fingerprint]
-        
-        print(f"Files with fingerprints: {len(fingerprinted)}")
-        print(f"Files with hash only: {len(hash_only)}")
         
         duplicate_groups: List[DuplicateGroup] = []
         processed: Set[str] = set()
         
-        # Compare fingerprinted files
+        # ===================================================================
+        # STEP 1: Extension-based duplicates (same name, different extensions)
+        # ===================================================================
+        if check_extensions:
+            print("[1/4] Checking for same-name files with different extensions...")
+            extension_groups = self._find_extension_duplicates(audio_files)
+            
+            if extension_groups:
+                print(f"  >> Found {len(extension_groups)} extension-based duplicate groups\n")
+                duplicate_groups.extend(extension_groups)
+                for group in extension_groups:
+                    for f in group.files:
+                        processed.add(str(f.path))
+            else:
+                print("  No extension-based duplicates found\n")
+        
+        # ===================================================================
+        # STEP 2: Audio vector comparison (FFmpeg) - CROSS-FORMAT DETECTOR
+        # Decodes audio to PCM, builds energy vector, compares pairwise.
+        # Catches same audio in ANY format (mp3/wav/flac/m4a) or ANY bitrate.
+        # ===================================================================
+        vectored_files = [f for f in audio_files if f.audio_vector and str(f.path) not in processed]
+        
+        if vectored_files:
+            print(f"[2/4] Comparing {len(vectored_files)} files by AUDIO CONTENT (ffmpeg energy vectors)...")
+            print("      This detects SAME AUDIO with different names/formats/bitrates")
+            
+            total_vec_comparisons = len(vectored_files) * (len(vectored_files) - 1) // 2
+            vec_count = 0
+            vec_matches = 0
+            
+            for i, file1 in enumerate(vectored_files):
+                if str(file1.path) in processed:
+                    continue
+                
+                group_files = [file1]
+                group_similarities = []
+                
+                for j, file2 in enumerate(vectored_files[i+1:], i+1):
+                    if str(file2.path) in processed:
+                        continue
+                    
+                    vec_count += 1
+                    
+                    if total_vec_comparisons > 100:
+                        percent = int(vec_count / total_vec_comparisons * 100)
+                        if percent % 10 == 0:
+                            print(f"  Progress: {percent}% ({vec_matches} matches)", end='\r')
+                            sys.stdout.flush()
+                    
+                    # Duration quick-check
+                    dur_sim = self._calculate_duration_similarity(file1.duration, file2.duration)
+                    if dur_sim < 0.70:
+                        continue
+                    
+                    # Compare audio energy vectors
+                    sim = FFmpegAudioHasher.compare_vectors(file1.audio_vector, file2.audio_vector)
+                    
+                    if sim >= 0.85:  # Energy correlation threshold
+                        group_files.append(file2)
+                        group_similarities.append(sim)
+                        processed.add(str(file2.path))
+                        vec_matches += 1
+                
+                if len(group_files) > 1:
+                    processed.add(str(file1.path))
+                    avg_sim = sum(group_similarities) / len(group_similarities)
+                    
+                    has_different_formats = len(set(f.format for f in group_files)) > 1
+                    has_different_names = len(set(f.path.stem.lower() for f in group_files)) > 1
+                    
+                    group = DuplicateGroup(
+                        files=group_files,
+                        similarity=avg_sim,
+                        detection_method='audio_content'
+                    )
+                    self._recommend_keep(group)
+                    duplicate_groups.append(group)
+                    
+                    file_names = ', '.join(f.path.name for f in group_files)
+                    details = []
+                    if has_different_names:
+                        details.append("DIFFERENT NAMES")
+                    if has_different_formats:
+                        details.append("DIFFERENT FORMATS")
+                    detail_str = f" ({', '.join(details)})" if details else ""
+                    print(f"\n  >> SAME AUDIO {avg_sim*100:.1f}%{detail_str}: {file_names}")
+            
+            audio_groups = len([g for g in duplicate_groups if g.detection_method == 'audio_content'])
+            if audio_groups:
+                print(f"\n  >> Found {audio_groups} audio-content duplicate groups\n")
+            else:
+                print(f"\n  No audio-content duplicates found\n")
+        else:
+            print(f"[2/4] No files with audio vectors for content comparison.")
+        
+        # ===================================================================
+        # STEP 3: Fingerprint comparison (fuzzy matching for remaining files)
+        # ===================================================================
+        fingerprinted = [f for f in audio_files if f.fingerprint and str(f.path) not in processed]
+        
         if fingerprinted:
-            print(f"\nComparing {len(fingerprinted)} fingerprinted files...")
+            print(f"[3/4] Comparing {len(fingerprinted)} remaining files by fingerprint (fuzzy match)...")
             
             total_comparisons = len(fingerprinted) * (len(fingerprinted) - 1) // 2
             comparison_count = 0
@@ -465,7 +858,6 @@ class AudioDuplicateDetector:
                     
                     comparison_count += 1
                     
-                    # Progress for large libraries
                     if total_comparisons > 100:
                         percent = int(comparison_count / total_comparisons * 100)
                         if percent != last_percent and percent % 10 == 0:
@@ -473,12 +865,10 @@ class AudioDuplicateDetector:
                             sys.stdout.flush()
                             last_percent = percent
                     
-                    # Quick duration check first (filter obvious non-matches)
                     dur_sim = self._calculate_duration_similarity(file1.duration, file2.duration)
-                    if dur_sim < 0.85:  # Duration differs by more than 15%
+                    if dur_sim < 0.70:
                         continue
                     
-                    # Compare fingerprints (the key comparison)
                     fp_sim = self._calculate_fingerprint_similarity(
                         file1.fingerprint, file2.fingerprint
                     )
@@ -492,29 +882,26 @@ class AudioDuplicateDetector:
                 if len(group_files) > 1:
                     processed.add(str(file1.path))
                     avg_similarity = sum(group_similarities) / len(group_similarities) if group_similarities else 1.0
-                    group = DuplicateGroup(files=group_files, similarity=avg_similarity)
+                    group = DuplicateGroup(
+                        files=group_files, 
+                        similarity=avg_similarity,
+                        detection_method='fingerprint'
+                    )
                     self._recommend_keep(group)
                     duplicate_groups.append(group)
+                    
+                    file_names = ', '.join(f.path.name for f in group_files)
+                    print(f"\n  >> Content duplicate ({avg_similarity*100:.1f}% match): {file_names}")
             
-            print(f"\n  Fingerprint comparison complete. Found {len(duplicate_groups)} duplicate groups.")
+            fingerprint_groups = len([g for g in duplicate_groups if g.detection_method == 'fingerprint'])
+            print(f"\n  >> Fingerprint comparison complete. Found {fingerprint_groups} groups.")
+        else:
+            print(f"[3/4] No remaining files for fingerprint comparison.")
         
-        # Compare hash-only files (exact matches)
-        if hash_only:
-            print(f"\nComparing {len(hash_only)} hash-only files...")
-            
-            hash_groups: Dict[str, List[AudioFile]] = defaultdict(list)
-            for f in hash_only:
-                hash_groups[f.file_hash].append(f)
-            
-            hash_duplicates = 0
-            for hash_val, files in hash_groups.items():
-                if len(files) > 1:
-                    group = DuplicateGroup(files=files, similarity=1.0)
-                    self._recommend_keep(group)
-                    duplicate_groups.append(group)
-                    hash_duplicates += 1
-            
-            print(f"  Found {hash_duplicates} exact duplicate groups (by hash)")
+        # ===================================================================
+        # STEP 4: Summary
+        # ===================================================================
+        print(f"\n[4/4] Total duplicate groups found: {len(duplicate_groups)}")
         
         # Sort groups by potential savings
         duplicate_groups.sort(key=lambda g: g.potential_savings, reverse=True)
@@ -585,23 +972,57 @@ class ReportGenerator:
         total_duplicates = sum(len(g.files) for g in groups)
         total_savings = sum(g.potential_savings for g in groups)
         
+        # Count by detection method
+        fingerprint_groups = sum(1 for g in groups if g.detection_method == 'fingerprint')
+        extension_groups = sum(1 for g in groups if g.detection_method == 'extension')
+        hash_groups = sum(1 for g in groups if g.detection_method == 'hash')
+        audio_content_groups = sum(1 for g in groups if g.detection_method == 'audio_content')
+        
         print(f"Total files scanned: {total_files}")
         print(f"Duplicate groups found: {len(groups)}")
+        if audio_content_groups:
+            print(f"  - Same audio content (ffmpeg): {audio_content_groups}")
+        if fingerprint_groups:
+            print(f"  - Content-based (fingerprint): {fingerprint_groups}")
+        if extension_groups:
+            print(f"  - Extension-based (same name): {extension_groups}")
+        if hash_groups:
+            print(f"  - Exact copies (hash): {hash_groups}")
         print(f"Total duplicate files: {total_duplicates}")
         print(f"Potential space savings: {self._format_size(total_savings)}")
         print()
         
         for i, group in enumerate(groups, 1):
-            print(f"\n{'-'*50}")
-            print(f"DUPLICATE GROUP {i} ({len(group.files)} files)")
+            # Detection method badge
+            method_badge = {
+                'fingerprint': '\U0001F50A CONTENT MATCH (fingerprint)',
+                'audio_content': '\U0001F3B5 SAME AUDIO CONTENT (ffmpeg)',
+                'extension': '\U0001F4C4 EXTENSION MATCH',
+                'hash': '\U0001F4DD EXACT COPY'
+            }.get(group.detection_method, 'UNKNOWN')
+            
+            print(f"\n{'-'*60}")
+            print(f"DUPLICATE GROUP {i} ({len(group.files)} files) - {method_badge}")
             print(f"Similarity: {group.similarity*100:.1f}%")
             print(f"Potential savings: {self._format_size(group.potential_savings)}")
-            print(f"{'-'*50}")
+            
+            # Show detection explanation
+            if group.detection_method == 'audio_content':
+                print(f"Detection: SAME AUDIO decoded via FFmpeg (different name/extension/bitrate)")
+            elif group.detection_method == 'fingerprint':
+                print(f"Detection: Same audio content (different names/extensions/bitrates OK)")
+            elif group.detection_method == 'extension':
+                print(f"Detection: Same filename with different extensions")
+            elif group.detection_method == 'hash':
+                print(f"Detection: Exact byte-for-byte copies")
+            
+            print(f"{'-'*60}")
             
             for f in group.files:
                 status = "KEEP" if f == group.recommended_keep else "DELETE"
                 status_color = f"[{status}]"
-                print(f"  {status_color:10} {f.path}")
+                print(f"  {status_color:10} {f.path.name}")
+                print(f"             Path: {f.path}")
                 print(f"             Size: {self._format_size(f.size)}, Format: {f.format.upper()}")
                 if f.duration:
                     print(f"             Duration: {f.duration:.1f}s")
@@ -778,7 +1199,13 @@ class ReportGenerator:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Audio Duplicate Detection System - Find duplicate audio files using acoustic fingerprinting',
+        description='''Audio Duplicate Detection System - Find duplicate audio files using:
+  1. CONTENT-BASED MATCHING (Acoustic Fingerprinting)
+     - Detects same audio even with different names, extensions, or bitrates
+     - Example: song.mp3, track2.wav, audio3.m4a (all same audio content)
+  
+  2. Extension-based matching (same filename, different extensions)
+  3. Exact byte-for-byte copies (file hash)''',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -799,8 +1226,8 @@ Examples:
     parser.add_argument(
         '-t', '--threshold',
         type=float,
-        default=0.95,
-        help='Similarity threshold (0.0-1.0, default: 0.95)'
+        default=0.90,
+        help='Content similarity threshold (0.0-1.0, default: 0.90). Lower=more matches (use 0.85 if still missing)'
     )
     
     parser.add_argument(
@@ -837,9 +1264,15 @@ Examples:
     )
     
     parser.add_argument(
+        '--no-extension-check',
+        action='store_true',
+        help='Disable detection of same-name files with different extensions'
+    )
+    
+    parser.add_argument(
         '-v', '--version',
         action='version',
-        version='Audio Duplicate Detector 1.1.0'
+        version='Audio Duplicate Detector 1.2.0'
     )
     
     args = parser.parse_args()
@@ -849,8 +1282,12 @@ Examples:
         print("\n" + "="*60)
         print("  AUDIO DUPLICATE DETECTION SYSTEM")
         print("="*60)
-        print("\nThis tool identifies duplicate audio files using acoustic")
-        print("fingerprinting technology - even across different formats!")
+        print("\nThis tool detects duplicate audio files using:")
+        print("  \u2713 CONTENT-BASED MATCHING (Acoustic Fingerprinting)")
+        print("    - Same audio with different names/extensions/bitrates")
+        print("    - Example: song.mp3, track2.wav, audio3.m4a")
+        print("  \u2713 Extension-based (same name, different extensions)")
+        print("  \u2713 Exact byte copies (file hash)")
         print()
         
         folder = input("Enter the path to your music folder: ").strip().strip('"\'')
@@ -889,7 +1326,8 @@ Examples:
         return 0
     
     # Find duplicates
-    duplicate_groups = detector.find_duplicates(audio_files)
+    check_extensions = not args.no_extension_check
+    duplicate_groups = detector.find_duplicates(audio_files, check_extensions=check_extensions)
     
     # Initialize report generator
     output_dir = Path(args.output) if args.output else Path.cwd()

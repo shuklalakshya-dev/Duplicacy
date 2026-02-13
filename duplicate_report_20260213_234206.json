@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-02-13T23:42:06.568162",
+  "total_files_scanned": 6,
+  "duplicate_groups_found": 1,
+  "total_duplicate_files": 3,
+  "potential_savings_bytes": 2298096,
+  "potential_savings_human": "2.19 MB",
+  "duplicate_groups": [
+    {
+      "files": [
+        {
+          "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\NEW.mp3",
+          "size": 1149048,
+          "format": ".mp3",
+          "fingerprint_length": 0,
+          "duration": null,
+          "file_hash": "14531d26703db63fa4c84156dfeaf8249bd644a00db01ca99bc985991b643a42",
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\Sample -1 - Copy.mp3",
+          "size": 1149048,
+          "format": ".mp3",
+          "fingerprint_length": 0,
+          "duration": null,
+          "file_hash": "14531d26703db63fa4c84156dfeaf8249bd644a00db01ca99bc985991b643a42",
+          "error": null
+        },
+        {
+          "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\Sample -1.mp3",
+          "size": 1149048,
+          "format": ".mp3",
+          "fingerprint_length": 0,
+          "duration": null,
+          "file_hash": "14531d26703db63fa4c84156dfeaf8249bd644a00db01ca99bc985991b643a42",
+          "error": null
+        }
+      ],
+      "recommended_keep": {
+        "path": "C:\\Users\\MSI-PC\\OneDrive\\Desktop\\Dupcheck\\NEW.mp3",
+        "size": 1149048,
+        "format": ".mp3",
+        "fingerprint_length": 0,
+        "duration": null,
+        "file_hash": "14531d26703db63fa4c84156dfeaf8249bd644a00db01ca99bc985991b643a42",
+        "error": null
+      },
+      "potential_savings": 2298096,
+      "similarity": 1.0,
+      "file_count": 3
+    }
+  ]
+}
